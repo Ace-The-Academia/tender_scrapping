@@ -1,0 +1,76 @@
+name: Build and Deploy
+
+on:
+  push:
+    branches: [dev, testing, staging, prod]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+concurrency:
+  group: deploy-${{ github.ref_name }}
+  cancel-in-progress: false
+
+jobs:
+  build-and-deploy:
+    runs-on: self-hosted
+    environment: ${{ github.ref_name }} 
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Lowercase owner for image tag
+        id: lc
+        run: |
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+
+      - name: Log in to GHCR
+        run: |
+          echo "${{ secrets.GHCR_TOKEN }}" | docker login ghcr.io \
+            -u "Arehone123" \
+            --password-stdin
+
+      - name: Build image
+        run: |
+          IMAGE=ghcr.io/${{ steps.lc.outputs.owner }}/tender-scrapping
+          # Tag the image with the branch name (e.g., :dev, :staging, :prod)
+          docker build -t $IMAGE:${{ github.ref_name }} -t $IMAGE:${{ github.sha }} .
+
+      - name: Push image
+        run: |
+          IMAGE=ghcr.io/${{ steps.lc.outputs.owner }}/tender-scrapping
+          docker push $IMAGE:${{ github.ref_name }}
+          docker push $IMAGE:${{ github.sha }}
+
+      - name: Deploy to Server
+       
+        run: |
+          # Use github.workspace to safely locate the runner directory
+          cd ${{ github.workspace }}
+          
+          # 1. Create the isolated Docker project name
+          PROJECT_NAME="tender-${{ github.ref_name }}"
+          
+          # 2. Tell Docker Compose which image to use
+          export IMAGE_TAG="${{ github.ref_name }}"
+          
+          # 3. Dynamically assign ports based on the branch!
+          if [ "${{ github.ref_name }}" = "prod" ]; then
+            export HOST_PORT="9000"
+          elif [ "${{ github.ref_name }}" = "staging" ]; then
+            export HOST_PORT="9011"
+          elif [ "${{ github.ref_name }}" = "testing" ]; then
+            export HOST_PORT="9012"
+          elif [ "${{ github.ref_name }}" = "dev" ]; then
+            export HOST_PORT="9013"
+          fi
+          
+          # 4. Make the GitHub repository owner available for compose
+          export GITHUB_REPOSITORY_OWNER="${{ steps.lc.outputs.owner }}"
+          
+          # 5. Spin up the specific environment
+          docker compose -p $PROJECT_NAME up -d --force-recreate
+          docker compose -p $PROJECT_NAME ps
