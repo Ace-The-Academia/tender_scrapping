@@ -15,8 +15,7 @@ concurrency:
 
 jobs:
   build-and-deploy:
-    runs-on: self-hosted
-    environment: ${{ github.ref_name }} 
+    runs-on: self-hosted 
 
     steps:
       - name: Checkout repository
