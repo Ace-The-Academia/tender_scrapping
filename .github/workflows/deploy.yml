@@ -1,81 +1,158 @@
+
 name: Build and Deploy
 
 on:
   push:
-    branches: [dev, testing, staging, prod]
+    branches:
+      - dev
+      - testing
+      - staging
+      - prod
+
   workflow_dispatch:
 
+# GitHub permissions
 permissions:
   contents: read
   packages: write
 
+# Prevent simultaneous deployments to the same environment
 concurrency:
   group: deploy-${{ github.ref_name }}
   cancel-in-progress: false
 
 jobs:
   build-and-deploy:
+    name: Build and Deploy - ${{ github.ref_name }}
+
     runs-on: self-hosted
-    environment: ${{ github.ref_name }} 
+
+    environment:
+      name: ${{ github.ref_name }}
 
     steps:
+
+      # 1. Checkout repository
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Lowercase owner for image tag
+      # 2. Convert repository owner to lowercase
+      - name: Lowercase repository owner
         id: lc
+        shell: bash
         run: |
-          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
+          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
+          echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
 
-      # FIXED: Proper indentation and using GHCR_TOKEN
-      - name: Log in to GHCR
+      # 3. Login to GitHub Container Registry
+      - name: Login to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GHCR_TOKEN }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build image
+      # 4. Build Docker image
+      - name: Build Docker image
+        env:
+          OWNER: ${{ steps.lc.outputs.owner }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
         run: |
-          IMAGE=ghcr.io/${{ steps.lc.outputs.owner }}/tender-scrapping
-          # Tag the image with the branch name (e.g., :dev, :staging, :prod)
-          docker build -t $IMAGE:${{ github.ref_name }} -t $IMAGE:${{ github.sha }} .
+          set -euo pipefail
 
-      - name: Push image
+          IMAGE="ghcr.io/${OWNER}/tender-scrapping"
+
+          echo "Building image for ${BRANCH}"
+
+          docker build \
+            -t "${IMAGE}:${BRANCH}" \
+            -t "${IMAGE}:${SHA}" \
+            .
+
+      # 5. Push Docker image to GHCR
+      - name: Push Docker image
+        env:
+          OWNER: ${{ steps.lc.outputs.owner }}
+          BRANCH: ${{ github.ref_name }}
+          SHA: ${{ github.sha }}
         run: |
-          IMAGE=ghcr.io/${{ steps.lc.outputs.owner }}/tender-scrapping
-          docker push $IMAGE:${{ github.ref_name }}
-          docker push $IMAGE:${{ github.sha }}
+          set -euo pipefail
 
+          IMAGE="ghcr.io/${OWNER}/tender-scrapping"
+
+          echo "Pushing ${IMAGE}:${BRANCH}"
+
+          docker push "${IMAGE}:${BRANCH}"
+
+          echo "Pushing ${IMAGE}:${SHA}"
+
+          docker push "${IMAGE}:${SHA}"
+
+      # 6. Deploy to the correct environment
       - name: Deploy to Server
         env:
+          OWNER: ${{ steps.lc.outputs.owner }}
+          BRANCH: ${{ github.ref_name }}
+
           AZURE_AI_ENDPOINT: ${{ secrets.AZURE_AI_ENDPOINT }}
           AZURE_AI_API_KEY: ${{ secrets.AZURE_AI_API_KEY }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
+
+        shell: bash
         run: |
-          # Use github.workspace to safely locate the runner directory
-          cd ${{ github.workspace }}
-          
-          # 1. Create the isolated Docker project name
-          PROJECT_NAME="tender-${{ github.ref_name }}"
-          
-          # 2. Tell Docker Compose which image to use
-          export IMAGE_TAG="${{ github.ref_name }}"
-          
-          # 3. Dynamically assign ports based on the branch!
-          if [ "${{ github.ref_name }}" = "prod" ]; then
-            export HOST_PORT="9000"
-          elif [ "${{ github.ref_name }}" = "staging" ]; then
-            export HOST_PORT="9011"
-          elif [ "${{ github.ref_name }}" = "testing" ]; then
-            export HOST_PORT="9012"
-          elif [ "${{ github.ref_name }}" = "dev" ]; then
-            export HOST_PORT="9013"
-          fi
-          
-          # 4. Make the GitHub repository owner available for compose
-          export GITHUB_REPOSITORY_OWNER="${{ steps.lc.outputs.owner }}"
-          
-          # 5. Spin up the specific environment
-          docker compose -p $PROJECT_NAME up -d --force-recreate
-          docker compose -p $PROJECT_NAME ps
+          set -euo pipefail
+
+          cd "$GITHUB_WORKSPACE"
+
+          # Environment-specific Docker project
+          PROJECT_NAME="tender-${BRANCH}"
+
+          # Docker image configuration
+          export IMAGE="ghcr.io/${OWNER}/tender-scrapping"
+          export IMAGE_TAG="${BRANCH}"
+
+          # Assign environment-specific ports
+          case "$BRANCH" in
+            prod)
+              export HOST_PORT="9000"
+              ;;
+            staging)
+              export HOST_PORT="9011"
+              ;;
+            testing)
+              export HOST_PORT="9012"
+              ;;
+            dev)
+              export HOST_PORT="9013"
+              ;;
+            *)
+              echo "ERROR: Unsupported branch ${BRANCH}"
+              exit 1
+              ;;
+          esac
+
+          # Repository owner
+          export GITHUB_REPOSITORY_OWNER="${OWNER}"
+
+          echo "================================"
+          echo "Deploying Tender Scrapping"
+          echo "Environment: ${BRANCH}"
+          echo "Docker project: ${PROJECT_NAME}"
+          echo "Image: ${IMAGE}:${IMAGE_TAG}"
+          echo "Host port: ${HOST_PORT}"
+          echo "================================"
+
+          # Validate Docker Compose configuration
+          docker compose -p "${PROJECT_NAME}" config --quiet
+
+          # Deploy application
+          docker compose -p "${PROJECT_NAME}" up \
+            -d \
+            --force-recreate \
+            --remove-orphans
+
+          # Show deployment status
+          docker compose -p "${PROJECT_NAME}" ps
+
+          echo "Deployment completed for ${BRANCH}"
