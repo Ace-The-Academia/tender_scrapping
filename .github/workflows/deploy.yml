@@ -1,4 +1,4 @@
-name: Build and Deploy Monorepo
+name: Verify Repository
 
 on:
   push:
@@ -6,41 +6,15 @@ on:
   workflow_dispatch:
 
 jobs:
-  build-and-deploy:
+  verify-files:
     runs-on: self-hosted
-    environment: ${{ github.ref_name }} 
-
+    
     steps:
-      - name: Checkout repository
+      - name: Checkout Code
         uses: actions/checkout@v4
-
-      - name: Deploy to Server
-        env:
-          BRANCH: ${{ github.ref_name }}
-          AZURE_AI_ENDPOINT: ${{ secrets.AZURE_AI_ENDPOINT }}
-          AZURE_AI_API_KEY: ${{ secrets.AZURE_AI_API_KEY }}
-          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+        
+      - name: Confirm Files are Present
         run: |
-          cd ${{ github.workspace }}
-          
-          # Set unique project name based on branch
-          PROJECT_NAME="tender-${{ github.ref_name }}"
-          
-          # Assign environment-specific ports
-          if [ "$BRANCH" = "prod" ]; then
-            export FRONTEND_PORT=9001; export AGENT_PORT=9000; export SCRAPER_PORT=8000
-          elif [ "$BRANCH" = "staging" ]; then
-            export FRONTEND_PORT=9011; export AGENT_PORT=9012; export SCRAPER_PORT=9013
-          elif [ "$BRANCH" = "testing" ]; then
-            export FRONTEND_PORT=9021; export AGENT_PORT=9022; export SCRAPER_PORT=9023
-          else
-            export FRONTEND_PORT=9031; export AGENT_PORT=9032; export SCRAPER_PORT=9033
-          fi
-          
-          echo "Building and Deploying for $BRANCH"
-          
-          # Build and run directly on the server (No GHCR needed)
-          docker compose -p $PROJECT_NAME up -d --build --force-recreate --remove-orphans
-          
-          # Show status
-          docker compose -p $PROJECT_NAME ps
+          echo "Successfully pushed to GitHub!"
+          echo "Here are the files in your repository:"
+          ls -R
