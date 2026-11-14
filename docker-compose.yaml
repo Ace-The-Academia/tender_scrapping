@@ -1,10 +1,35 @@
 services:
-  app:
-    image: ${IMAGE}:${IMAGE_TAG}
+  frontend:
+    image: ghcr.io/${GITHUB_OWNER}/tender-frontend:${IMAGE_TAG:-dev}
+    container_name: tender-frontend-${IMAGE_TAG}
     ports:
-      - "${HOST_PORT}:8080"
+      - "${FRONTEND_PORT:-9001}:80"
+    networks:
+      - tender-net
+
+  agent:
+    image: ghcr.io/${GITHUB_OWNER}/tender-agent:${IMAGE_TAG:-dev}
+    container_name: tender-agent-${IMAGE_TAG}
+    ports:
+      - "${AGENT_PORT:-9000}:9000"
     environment:
-      AZURE_AI_ENDPOINT: ${AZURE_AI_ENDPOINT:-}
-      AZURE_AI_API_KEY: ${AZURE_AI_API_KEY:-}
-      JWT_SECRET: ${JWT_SECRET:-}
-    restart: unless-stopped
+      - AZURE_AI_ENDPOINT=${AZURE_AI_ENDPOINT}
+      - AZURE_AI_API_KEY=${AZURE_AI_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      # Note: Inside Docker, services talk by name
+      - AI_SERVICE_URL=http://scraper:8002
+      - CLIENT_API_URL=http://scraper:8001
+    networks:
+      - tender-net
+
+  scraper:
+    image: ghcr.io/${GITHUB_OWNER}/tender-scraper:${IMAGE_TAG:-dev}
+    container_name: tender-scraper-${IMAGE_TAG}
+    ports:
+      - "${SCRAPER_PORT:-8000}:8000"
+    networks:
+      - tender-net
+
+networks:
+  tender-net:
+    driver: bridge

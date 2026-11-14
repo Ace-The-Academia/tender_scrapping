@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TenderOS — AI Agent</title>
+    <link rel="stylesheet" href="css/dashboard.css">
+    <!-- Load ECharts for the radar chart -->
+    <script src="https://cdn.jsdelivr.net/npm/echarts@5.5.0/dist/echarts.min.js"></script>
+</head>
+<body>
+    <div class="app-layout">
+        <!-- Sidebar -->
+        <aside class="sidebar" id="sidebar">
+            <div class="brand">
+                <img src="icons/logo.svg" alt="TenderOS" class="brand-icon">
+                <span class="brand-text">TenderOS</span>
+            </div>
+            
+            <nav class="nav-menu">
+                <button class="nav-item active" data-view="dashboard">
+                    <img src="icons/dashboard.svg" alt="Dashboard"> Dashboard
+                </button>
+                <button class="nav-item" data-view="vault">
+                    <img src="icons/tasks.svg" alt="Vault"> Document Vault
+                </button>
+                <button class="nav-item" data-view="tenders">
+                    <img src="icons/tenders.svg" alt="Tenders"> Matched Tenders
+                </button>
+            </nav>
+
+            <div class="sidebar-footer">
+                <div class="system-status">
+                    <div class="status-dot online" id="health-dot"></div>
+                    <span id="health-text">Agent Online</span>
+                </div>
+            </div>
+        </aside>
+
+        <!-- Main Content Area -->
+        <main class="main-content">
+            <header class="topbar">
+                <div class="search-bar">
+                    <img src="icons/search.svg" alt="Search">
+                    <input type="text" placeholder="Search documents or tenders...">
+                </div>
+                <div class="topbar-actions">
+                    <button class="icon-btn" id="theme-toggle"><img src="icons/moon.svg" alt="Theme"></button>
+                    <div class="user-profile" id="user-profile">
+                        <div class="avatar">U</div>
+                    </div>
+                </div>
+            </header>
+
+            <!-- The view will be injected here -->
+            <div class="view-container" id="app-view"></div>
+        </main>
+    </div>
+
+    <!-- AI Assistant Floating Chat -->
+    <div class="chat-widget" id="chat-widget">
+        <button class="chat-toggle" id="chat-toggle">
+            <img src="icons/send.svg" alt="Chat">
+        </button>
+        <div class="chat-window hidden" id="chat-window">
+            <div class="chat-header">
+                <h3>TenderOS Agent</h3>
+                <button id="close-chat" class="icon-btn"><img src="icons/close.svg" alt="Close"></button>
+            </div>
+            <div class="chat-messages" id="chat-messages">
+                <div class="msg agent">Hello. I've reviewed your vault. Ask me anything about your readiness or tenders.</div>
+            </div>
+            <div class="chat-input-area">
+                <input type="text" id="chat-input" placeholder="Ask the agent...">
+                <button id="chat-send" class="btn-send"><img src="icons/send.svg" alt="Send"></button>
+            </div>
+        </div>
+    </div>
+
+    <script type="module" src="scripts/main.js"></script>
+</body>
+</html>

@@ -1,12 +1,8 @@
-name: Build and Deploy
+name: Build and Deploy Monorepo
 
 on:
   push:
-    branches:
-      - dev
-      - testing
-      - staging
-      - prod
+    branches: [dev, testing, staging, prod]
   workflow_dispatch:
 
 permissions:
@@ -19,55 +15,41 @@ concurrency:
 
 jobs:
   build-and-deploy:
-    name: Build and Deploy - ${{ github.ref_name }}
     runs-on: self-hosted
-    environment:
-      name: ${{ github.ref_name }}
+    environment: ${{ github.ref_name }} 
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
 
-      - name: Lowercase repository owner
+      - name: Lowercase owner
         id: lc
-        shell: bash
         run: |
-          OWNER="${GITHUB_REPOSITORY_OWNER,,}"
-          echo "owner=$OWNER" >> "$GITHUB_OUTPUT"
+          echo "owner=$(echo '${{ github.repository_owner }}' | tr '[:upper:]' '[:lower:]')" >> $GITHUB_OUTPUT
 
-      - name: Login to GHCR
+      - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          password: ${{ secrets.GHCR_TOKEN }}
 
-      - name: Build Docker image
-        env:
-          OWNER: ${{ steps.lc.outputs.owner }}
-          BRANCH: ${{ github.ref_name }}
-          SHA: ${{ github.sha }}
-        run: |
-          set -euo pipefail
-          IMAGE="ghcr.io/${OWNER}/tender-scrapping"
-          echo "Building image for ${BRANCH}"
-          docker build \
-            -t "${IMAGE}:${BRANCH}" \
-            -t "${IMAGE}:${SHA}" \
-            .
+      # --- BUILD ALL 3 IMAGES ---
+      - name: Build Frontend
+        run: docker build -t ghcr.io/${{ steps.lc.outputs.owner }}/tender-frontend:${{ github.ref_name }} ./frontend
 
-      - name: Push Docker image
-        env:
-          OWNER: ${{ steps.lc.outputs.owner }}
-          BRANCH: ${{ github.ref_name }}
-          SHA: ${{ github.sha }}
+      - name: Build Agent
+        run: docker build -t ghcr.io/${{ steps.lc.outputs.owner }}/tender-agent:${{ github.ref_name }} ./agent
+
+      - name: Build Scraper/DB
+        run: docker build -t ghcr.io/${{ steps.lc.outputs.owner }}/tender-scraper:${{ github.ref_name }} ./scraper-db
+
+      # --- PUSH ALL 3 IMAGES ---
+      - name: Push Images
         run: |
-          set -euo pipefail
-          IMAGE="ghcr.io/${OWNER}/tender-scrapping"
-          echo "Pushing ${IMAGE}:${BRANCH}"
-          docker push "${IMAGE}:${BRANCH}"
-          echo "Pushing ${IMAGE}:${SHA}"
-          docker push "${IMAGE}:${SHA}"
+          docker push ghcr.io/${{ steps.lc.outputs.owner }}/tender-frontend:${{ github.ref_name }}
+          docker push ghcr.io/${{ steps.lc.outputs.owner }}/tender-agent:${{ github.ref_name }}
+          docker push ghcr.io/${{ steps.lc.outputs.owner }}/tender-scraper:${{ github.ref_name }}
 
       - name: Deploy to Server
         env:
@@ -76,30 +58,23 @@ jobs:
           AZURE_AI_ENDPOINT: ${{ secrets.AZURE_AI_ENDPOINT }}
           AZURE_AI_API_KEY: ${{ secrets.AZURE_AI_API_KEY }}
           JWT_SECRET: ${{ secrets.JWT_SECRET }}
-        shell: bash
         run: |
-          set -euo pipefail
-          cd "$GITHUB_WORKSPACE"
+          cd ${{ github.workspace }}
           
-          PROJECT_NAME="tender-${BRANCH}"
-          export IMAGE="ghcr.io/${OWNER}/tender-scrapping"
+          PROJECT_NAME="tender-${{ github.ref_name }}"
+          export GITHUB_OWNER="${OWNER}"
           export IMAGE_TAG="${BRANCH}"
 
-          case "$BRANCH" in
-            prod)    export HOST_PORT="9000" ;;
-            staging) export HOST_PORT="9011" ;;
-            testing) export HOST_PORT="9012" ;;
-            dev)     export HOST_PORT="9013" ;;
-            *)       echo "ERROR: Unsupported branch ${BRANCH}"; exit 1 ;;
-          esac
+          # Set Ports based on branch
+          if [ "$BRANCH" = "prod" ]; then
+            export FRONTEND_PORT=9001; export AGENT_PORT=9000; export SCRAPER_PORT=8000
+          elif [ "$BRANCH" = "staging" ]; then
+            export FRONTEND_PORT=9011; export AGENT_PORT=9012; export SCRAPER_PORT=9013
+          elif [ "$BRANCH" = "testing" ]; then
+            export FRONTEND_PORT=9021; export AGENT_PORT=9022; export SCRAPER_PORT=9023
+          else
+            export FRONTEND_PORT=9031; export AGENT_PORT=9032; export SCRAPER_PORT=9033
+          fi
 
-          echo "================================"
-          echo "Deploying: ${IMAGE}:${IMAGE_TAG} on port ${HOST_PORT}"
-          echo "================================"
-
-          # Validate configuration and deploy
-          docker compose -p "${PROJECT_NAME}" config --quiet
-          docker compose -p "${PROJECT_NAME}" up -d --force-recreate --remove-orphans
-          docker compose -p "${PROJECT_NAME}" ps
-          
-          echo "Deployment completed for ${BRANCH}"
+          docker compose -p $PROJECT_NAME up -d --force-recreate
+          docker compose -p $PROJECT_NAME ps
