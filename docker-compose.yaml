@@ -1,0 +1,37 @@
+services:
+  frontend:
+    build: 
+      context: ./frontend
+    container_name: tender-frontend-${BRANCH:-dev}
+    ports:
+      - "${FRONTEND_PORT:-9001}:80"
+    networks:
+      - tender-net
+
+  agent:
+    build: 
+      context: ./agent
+    container_name: tender-agent-${BRANCH:-dev}
+    ports:
+      - "${AGENT_PORT:-9000}:9000"
+    environment:
+      - AZURE_AI_ENDPOINT=${AZURE_AI_ENDPOINT}
+      - AZURE_AI_API_KEY=${AZURE_AI_API_KEY}
+      - JWT_SECRET=${JWT_SECRET}
+      - AI_SERVICE_URL=http://scraper-db:8002
+      - CLIENT_API_URL=http://scraper-db:8001
+    networks:
+      - tender-net
+
+  scraper-db:
+    build: 
+      context: ./scraper-db
+    container_name: tender-scraper-${BRANCH:-dev}
+    ports:
+      - "${SCRAPER_PORT:-8000}:8000"
+    networks:
+      - tender-net
+
+networks:
+  tender-net:
+    driver: bridge

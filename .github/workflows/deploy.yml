@@ -1,0 +1,20 @@
+name: Verify Repository
+
+on:
+  push:
+    branches: [dev, testing, staging, prod]
+  workflow_dispatch:
+
+jobs:
+  verify-files:
+    runs-on: self-hosted
+    
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+        
+      - name: Confirm Files are Present
+        run: |
+          echo "Successfully pushed to GitHub!"
+          echo "Here are the files in your repository:"
+          ls -R
